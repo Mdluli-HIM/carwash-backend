@@ -12,7 +12,11 @@ const serviceRoutes = require('./routes/services');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 
 const app = express();
-app.use(cors());
+
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || '*',
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
