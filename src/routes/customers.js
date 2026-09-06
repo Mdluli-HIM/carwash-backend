@@ -2,15 +2,21 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 
-// GET /api/customers - list all customers, optionally search by phone
+// GET /api/customers - list all customers, optionally search by phone or name
 router.get('/', async (req, res) => {
   try {
-    const { phone } = req.query;
+    const { phone, search } = req.query;
     let result;
-    if (phone) {
+
+    if (search) {
+      result = await pool.query(
+        'SELECT * FROM customers WHERE name ILIKE $1 OR phone ILIKE $1 ORDER BY created_at DESC',
+        ['%' + search + '%']
+      );
+    } else if (phone) {
       result = await pool.query(
         'SELECT * FROM customers WHERE phone ILIKE $1 ORDER BY created_at DESC',
-        [`%${phone}%`]
+        ['%' + phone + '%']
       );
     } else {
       result = await pool.query('SELECT * FROM customers ORDER BY created_at DESC');
