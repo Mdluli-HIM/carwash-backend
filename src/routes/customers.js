@@ -6,22 +6,30 @@ const pool = require('../config/db');
 router.get('/', async (req, res) => {
   try {
     const { phone, search } = req.query;
-    let result;
+    let query = `
+      SELECT c.*, COUNT(v.id) AS vehicle_count
+      FROM customers c
+      LEFT JOIN vehicles v ON v.customer_id = c.id
+    `;
+    const params = [];
 
     if (search) {
-      result = await pool.query(
-        'SELECT * FROM customers WHERE name ILIKE $1 OR phone ILIKE $1 ORDER BY created_at DESC',
-        ['%' + search + '%']
-      );
+      params.push('%' + search + '%');
+      query += ' WHERE c.name ILIKE $1 OR c.phone ILIKE $1';
     } else if (phone) {
-      result = await pool.query(
-        'SELECT * FROM customers WHERE phone ILIKE $1 ORDER BY created_at DESC',
-        ['%' + phone + '%']
-      );
-    } else {
-      result = await pool.query('SELECT * FROM customers ORDER BY created_at DESC');
+      params.push('%' + phone + '%');
+      query += ' WHERE c.phone ILIKE $1';
     }
-    res.json(result.rows);
+
+    query += ' GROUP BY c.id ORDER BY c.total_visits DESC, c.created_at DESC';
+
+    const result = await pool.query(query, params);
+    const customers = result.rows.map((row) => ({
+      ...row,
+      vehicle_count: parseInt(row.vehicle_count),
+    }));
+
+    res.json(customers);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch customers' });
