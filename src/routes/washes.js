@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 
-// POST /api/washes - log a wash, auto-apply loyalty discount if earned
 router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -101,32 +100,49 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET /api/washes - full transaction history, with optional filters
+// GET /api/washes - paginated transaction history with filters
 router.get('/', async (req, res) => {
   try {
-    const { customer_id, employee_id, limit } = req.query;
+    const { employee_id, service_id, date_from, date_to, page, page_size } = req.query;
     const conditions = [];
     const params = [];
 
-    if (customer_id) {
-      params.push(customer_id);
-      conditions.push('wt.customer_id = $' + params.length);
-    }
     if (employee_id) {
       params.push(employee_id);
       conditions.push('wt.employee_id = $' + params.length);
     }
+    if (service_id) {
+      params.push(service_id);
+      conditions.push('wt.service_id = $' + params.length);
+    }
+    if (date_from) {
+      params.push(date_from);
+      conditions.push('wt.created_at >= $' + params.length);
+    }
+    if (date_to) {
+      params.push(date_to + ' 23:59:59');
+      conditions.push('wt.created_at <= $' + params.length);
+    }
 
     const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
-    const rowLimit = limit ? parseInt(limit) : 100;
+    const pageNum = page ? Math.max(1, parseInt(page)) : 1;
+    const pageSize = page_size ? Math.min(100, parseInt(page_size)) : 20;
+    const offset = (pageNum - 1) * pageSize;
 
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM wash_transactions wt ${whereClause}`,
+      params
+    );
+    const total = parseInt(countResult.rows[0].count);
+
+    const dataParams = [...params, pageSize, offset];
     const result = await pool.query(
       `SELECT
         wt.id, wt.price_charged, wt.discount_percent, wt.discount_reason, wt.created_at,
         c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone,
         v.make AS vehicle_make, v.model AS vehicle_model, v.plate AS vehicle_plate,
         e.id AS employee_id, e.name AS employee_name,
-        s.name AS service_name
+        s.id AS service_id, s.name AS service_name
        FROM wash_transactions wt
        JOIN customers c ON c.id = wt.customer_id
        JOIN vehicles v ON v.id = wt.vehicle_id
@@ -134,11 +150,17 @@ router.get('/', async (req, res) => {
        JOIN services s ON s.id = wt.service_id
        ${whereClause}
        ORDER BY wt.created_at DESC
-       LIMIT ${rowLimit}`,
-      params
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      dataParams
     );
 
-    res.json(result.rows);
+    res.json({
+      washes: result.rows,
+      page: pageNum,
+      page_size: pageSize,
+      total,
+      total_pages: Math.ceil(total / pageSize),
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch washes' });
