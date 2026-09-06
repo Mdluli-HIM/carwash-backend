@@ -36,10 +36,14 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/customers/:id - full profile: customer info, vehicles, and wash history
+// GET /api/customers/:id - profile, vehicles, and a paginated wash history
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const { page, page_size } = req.query;
+    const pageNum = page ? Math.max(1, parseInt(page)) : 1;
+    const pageSize = page_size ? Math.min(50, parseInt(page_size)) : 5;
+    const offset = (pageNum - 1) * pageSize;
 
     const customerResult = await pool.query(
       'SELECT * FROM customers WHERE id = $1',
@@ -54,6 +58,13 @@ router.get('/:id', async (req, res) => {
       [id]
     );
 
+    const countResult = await pool.query(
+      'SELECT COUNT(*), COALESCE(SUM(price_charged), 0) AS total_spent FROM wash_transactions WHERE customer_id = $1',
+      [id]
+    );
+    const totalWashes = parseInt(countResult.rows[0].count);
+    const totalSpent = parseFloat(countResult.rows[0].total_spent);
+
     const washesResult = await pool.query(
       `SELECT
         wt.id, wt.price_charged, wt.discount_percent, wt.discount_reason, wt.created_at,
@@ -65,13 +76,9 @@ router.get('/:id', async (req, res) => {
        JOIN employees e ON e.id = wt.employee_id
        JOIN services s ON s.id = wt.service_id
        WHERE wt.customer_id = $1
-       ORDER BY wt.created_at DESC`,
-      [id]
-    );
-
-    const totalSpent = washesResult.rows.reduce(
-      (sum, w) => sum + parseFloat(w.price_charged),
-      0
+       ORDER BY wt.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [id, pageSize, offset]
     );
 
     res.json({
@@ -79,6 +86,10 @@ router.get('/:id', async (req, res) => {
       vehicles: vehiclesResult.rows,
       washes: washesResult.rows,
       total_spent: totalSpent,
+      page: pageNum,
+      page_size: pageSize,
+      total_washes: totalWashes,
+      total_pages: Math.ceil(totalWashes / pageSize) || 1,
     });
   } catch (err) {
     console.error(err);
