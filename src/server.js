@@ -10,6 +10,7 @@ const authRoutes = require('./routes/auth');
 const employeeRoutes = require('./routes/employees');
 const serviceRoutes = require('./routes/services');
 const loyaltyRoutes = require('./routes/loyalty');
+const rewardsRoutes = require('./routes/rewards');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 
 const app = express();
@@ -21,6 +22,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/rewards', rewardsRoutes);
 
 app.use('/api/customers', requireAuth, customerRoutes);
 app.use('/api/vehicles', requireAuth, vehicleRoutes);
