@@ -47,12 +47,13 @@ router.post('/', async (req, res) => {
           [customer_id, rule.window_days, rule.id]
         );
         const visitsInWindow = parseInt(countResult.rows[0].count);
-
         if (visitsInWindow + 1 >= rule.threshold) {
-          discountPercent = parseFloat(rule.discount_percent);
-          discountReason = rule.name;
-          earnedRule = rule;
-          break;
+          const ruleDiscount = parseFloat(rule.discount_percent);
+          if (ruleDiscount > discountPercent) {
+            discountPercent = ruleDiscount;
+            discountReason = rule.name;
+            earnedRule = rule;
+          }
         }
       }
     }

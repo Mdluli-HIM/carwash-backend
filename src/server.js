@@ -9,6 +9,7 @@ const reportRoutes = require('./routes/reports');
 const authRoutes = require('./routes/auth');
 const employeeRoutes = require('./routes/employees');
 const serviceRoutes = require('./routes/services');
+const loyaltyRoutes = require('./routes/loyalty');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 
 const app = express();
@@ -27,6 +28,7 @@ app.use('/api/washes', requireAuth, washRoutes);
 app.use('/api/services', requireAuth, serviceRoutes);
 app.use('/api/employees', requireAuth, employeeRoutes);
 app.use('/api/reports', requireAuth, requireAdmin, reportRoutes);
+app.use('/api/loyalty-rules', requireAuth, loyaltyRoutes);
 
 app.get('/api/health', async (req, res) => {
   try {
