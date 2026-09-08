@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../config/db');
 
 // GET /api/rewards?phone=... - PUBLIC, no login required
-// Returns a customer's progress toward every active loyalty rule
+// Returns a customer's current wash status (if any) and progress toward every active loyalty rule
 router.get('/', async (req, res) => {
   try {
     const { phone } = req.query;
@@ -19,6 +19,20 @@ router.get('/', async (req, res) => {
       return res.status(404).json({ error: 'No customer found with that phone number' });
     }
     const customer = customerResult.rows[0];
+
+    const activeWashResult = await pool.query(
+      `SELECT wt.id, wt.status, wt.created_at,
+        v.make AS vehicle_make, v.model AS vehicle_model, v.plate AS vehicle_plate,
+        s.name AS service_name
+       FROM wash_transactions wt
+       JOIN vehicles v ON v.id = wt.vehicle_id
+       JOIN services s ON s.id = wt.service_id
+       WHERE wt.customer_id = $1 AND wt.status != 'done'
+       ORDER BY wt.created_at DESC
+       LIMIT 1`,
+      [customer.id]
+    );
+    const activeWash = activeWashResult.rows[0] || null;
 
     const rulesResult = await pool.query(
       'SELECT * FROM loyalty_rules WHERE active = true ORDER BY discount_percent DESC'
@@ -56,6 +70,7 @@ router.get('/', async (req, res) => {
         name: customer.name,
         total_visits: customer.total_visits,
       },
+      active_wash: activeWash,
       progress,
     });
   } catch (err) {
