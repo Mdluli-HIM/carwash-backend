@@ -62,8 +62,8 @@ router.post('/', async (req, res) => {
 
     const washResult = await client.query(
       `INSERT INTO wash_transactions
-        (customer_id, vehicle_id, employee_id, service_id, price_charged, discount_percent, discount_reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+        (customer_id, vehicle_id, employee_id, service_id, price_charged, discount_percent, discount_reason, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
        RETURNING *`,
       [customer_id, vehicle_id, employee_id, service_id, finalPrice, discountPercent, discountReason]
     );
@@ -98,6 +98,58 @@ router.post('/', async (req, res) => {
     res.status(500).json({ error: 'Failed to log wash' });
   } finally {
     client.release();
+  }
+});
+
+// PATCH /api/washes/:id/status - update a wash's status (pending -> washing -> done)
+router.patch('/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const validStatuses = ['pending', 'washing', 'done'];
+
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'status must be one of: pending, washing, done' });
+    }
+
+    const result = await pool.query(
+      'UPDATE wash_transactions SET status = $1 WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Wash not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update wash status' });
+  }
+});
+
+// GET /api/washes/active - all washes not yet done, for the attendant queue screen
+router.get('/active', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+        wt.id, wt.status, wt.price_charged, wt.created_at,
+        c.name AS customer_name, c.phone AS customer_phone,
+        v.make AS vehicle_make, v.model AS vehicle_model, v.plate AS vehicle_plate,
+        e.name AS employee_name,
+        s.name AS service_name
+       FROM wash_transactions wt
+       JOIN customers c ON c.id = wt.customer_id
+       JOIN vehicles v ON v.id = wt.vehicle_id
+       JOIN employees e ON e.id = wt.employee_id
+       JOIN services s ON s.id = wt.service_id
+       WHERE wt.status != 'done'
+       ORDER BY wt.created_at ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch active washes' });
   }
 });
 
@@ -139,7 +191,7 @@ router.get('/', async (req, res) => {
     const dataParams = [...params, pageSize, offset];
     const result = await pool.query(
       `SELECT
-        wt.id, wt.price_charged, wt.discount_percent, wt.discount_reason, wt.created_at,
+        wt.id, wt.price_charged, wt.discount_percent, wt.discount_reason, wt.status, wt.created_at,
         c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone,
         v.make AS vehicle_make, v.model AS vehicle_model, v.plate AS vehicle_plate,
         e.id AS employee_id, e.name AS employee_name,
